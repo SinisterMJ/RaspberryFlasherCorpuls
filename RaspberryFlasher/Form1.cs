@@ -1,8 +1,10 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Collections.Specialized;
 using System.Configuration;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Windows.Forms;
@@ -92,32 +94,15 @@ namespace RaspberryFlasher
 
         private bool GetColorCode(out string colorCode)
         {
-            colorCode = "";
             string productCode = textBox_SerialNumber.Text;
 
-            if (productCode == "97048.01")
-                colorCode = "BLACK";
-
-            if (productCode == "97048.02")
-                colorCode = "RED";
-
-            if (productCode == "97048.03")
-                colorCode = "GREEN";
-
-            if (productCode == "97048.04")
-                colorCode = "BLUE";
-
-            if (productCode == "97048.05")
-                colorCode = "ORANGE";
-
-            if (productCode == "97048.06")
-                colorCode = "PINK";
-
-            if (productCode == "97048.07")
-                colorCode = "PURPLE";
-
-            if (productCode == "97048.08")
-                colorCode = "CAMO";
+            NameValueCollection config = ConfigurationManager.GetSection("productKeys") as NameValueCollection;
+            colorCode = "";
+            
+            if (config.AllKeys.Contains(productCode))
+            {
+                colorCode = config[productCode];
+            }
 
             return colorCode != "";
         }
@@ -131,10 +116,7 @@ namespace RaspberryFlasher
             process.StartInfo.UseShellExecute = false;
             process.StartInfo.RedirectStandardOutput = true;
             process.StartInfo.RedirectStandardError = true;
-            //* Set your output and error (asynchronous) handlers
-            /*process.OutputDataReceived += new DataReceivedEventHandler(OutputHandler);
-            process.ErrorDataReceived += new DataReceivedEventHandler(OutputHandler);*/
-            //* Start process and handlers
+
             process.Start();
             StreamReader reader = process.StandardOutput;
             string output = reader.ReadToEnd();
@@ -169,7 +151,7 @@ namespace RaspberryFlasher
             //process.OutputDataReceived += new DataReceivedEventHandler(OutputHandler);
 
             process.OutputDataReceived += 
-                (Object _sender, DataReceivedEventArgs _args) =>
+                (object _sender, DataReceivedEventArgs _args) =>
                     OutputHandler(id, _sender, _args);
 
             process.Start();
@@ -193,9 +175,10 @@ namespace RaspberryFlasher
             //* Create your Process
             List<string> drives = DriveLetters();
 
-            if (drives.Count < 6)
+            if (drives.Count != 6)
             {
-                if (MessageBox.Show("Weniger als 6 SD-Karten gefunden. Fortfahren?", "SD-Karten Anzahl", MessageBoxButtons.YesNo) == DialogResult.No)
+                string text = (drives.Count < 6 ? "Weniger" : "Mehr") + " als 6 Datenträger gefunden. Fortfahren?";
+                if (MessageBox.Show(text, "Datenträger Anzahl", MessageBoxButtons.YesNo) == DialogResult.No)
                 {
                     ResetForm();
                     return;
@@ -206,16 +189,15 @@ namespace RaspberryFlasher
             string version = ConfigurationManager.AppSettings["Image_Version"];
             string fileName = basePath + "Corpuls_Simulation_" + colorCode + "_" + version + ".img";
             int count = 1;
+            int count_thread = 1;
             List<Thread> allThreads = new List<Thread>();
 
             foreach (string drive in drives)
             {
-                SetLabelVisibility(true, count);
-                Thread local = new Thread(() => FlashImage(fileName, drive, count));
+                SetLabelVisibility(true, count++);
+                Thread local = new Thread(() => FlashImage(fileName, drive, count_thread++));
                 local.Start();
                 allThreads.Add(local);
-                Thread.Sleep(100);
-                count++;
             }
                         
             while(true)
@@ -246,7 +228,7 @@ namespace RaspberryFlasher
             {
                 string[] bytes = outLine.Data.Split('/');
                 Int64 percent = Convert.ToInt64(bytes[0]) * 100 / Convert.ToInt64(bytes[1]);
-                SetLabelText("SD Karte " + id.ToString() + ": " + percent.ToString("D" + 2) + "% fertig", id);
+                SetLabelText("SD Karte " + id.ToString() + ": " + percent.ToString("D" + 2) + "% geschrieben.", id);
             }
         }
 
