@@ -16,14 +16,9 @@ namespace RaspberryFlasher
     public partial class Form1 : Form
     {
         private Thread worker;
-        List<string> excludedDrives;
         public Form1()
         {
-            InitializeComponent();
-            excludedDrives = new List<string>();
-            string listAll = ConfigurationManager.AppSettings["Exclude_Drives"];
-            foreach (string s in listAll.Split(' '))
-                excludedDrives.Add(s);            
+            InitializeComponent(); 
         }
 
         void SetTextBoxText(string newText)
