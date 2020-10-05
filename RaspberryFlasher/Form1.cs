@@ -8,6 +8,8 @@ using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Windows.Forms;
+using System.Management;
+using System.Linq;
 
 namespace RaspberryFlasher
 {
@@ -110,31 +112,27 @@ namespace RaspberryFlasher
         List<string> DriveLetters()
         {
             List<string> result = new List<string>();
-            Process process = new Process();
-            process.StartInfo.FileName = "wmic";
-            process.StartInfo.Arguments = "logicaldisk where drivetype=2 get Caption,Size";
-            process.StartInfo.UseShellExecute = false;
-            process.StartInfo.RedirectStandardOutput = true;
-            process.StartInfo.RedirectStandardError = true;
-
-            process.Start();
-            StreamReader reader = process.StandardOutput;
-            string output = reader.ReadToEnd();
-            process.WaitForExit();
-
-            Regex rx = new Regex(@".?(.):.*?.*?", RegexOptions.Compiled);
-            MatchCollection matches = rx.Matches(output);
-
-            foreach (Match match in matches)
+            var test = GetUsbDevices();
+            var drives = test.ToList();
+            foreach (var drive in drives)
             {
-                GroupCollection groups = match.Groups;
-                if (excludedDrives.Contains(groups[1].Value))
-                    continue;
-
-                result.Add(groups[1].Value);
+                result.Add(drive.Name.Substring(0, 1));
             }
-
+            
             return result;
+        }
+
+        IEnumerable<DriveInfo> GetUsbDevices()
+        {
+            string sdName = ConfigurationManager.AppSettings["Configured_Capture_Name"];
+            IEnumerable<string> usbDrivesLetters = from drive in new ManagementObjectSearcher("select * from Win32_DiskDrive WHERE InterfaceType='USB' AND Caption='" + sdName + "'").Get().Cast<ManagementObject>()
+                                                   from o in drive.GetRelated("Win32_DiskPartition").Cast<ManagementObject>()
+                                                   from i in o.GetRelated("Win32_LogicalDisk").Cast<ManagementObject>()
+                                                   select string.Format("{0}\\", i["Name"]);
+
+            return from drive in DriveInfo.GetDrives()
+                   where drive.DriveType == DriveType.Removable && usbDrivesLetters.Contains(drive.RootDirectory.Name)
+                   select drive;
         }
 
         void FlashImage(string imgPath, string letterPath, int id)
@@ -175,9 +173,9 @@ namespace RaspberryFlasher
             //* Create your Process
             List<string> drives = DriveLetters();
 
-            if (drives.Count != 6)
+            if (drives.Count != 4)
             {
-                string text = (drives.Count < 6 ? "Weniger" : "Mehr") + " als 6 Datenträger gefunden. Fortfahren?";
+                string text = (drives.Count < 4 ? "Weniger" : "Mehr") + " als 4 Datenträger gefunden. Fortfahren?";
                 if (MessageBox.Show(text, "Datenträger Anzahl", MessageBoxButtons.YesNo) == DialogResult.No)
                 {
                     ResetForm();
