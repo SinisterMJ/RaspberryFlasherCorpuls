@@ -107,27 +107,33 @@ namespace RaspberryFlasher
         List<string> DriveLetters()
         {
             List<string> result = new List<string>();
-            var test = GetUsbDevices();
-            var drives = test.ToList();
+            var usbDrives = GetUsbDevices();
+            var drives = usbDrives.ToList();
+
             foreach (var drive in drives)
             {
-                result.Add(drive.Name.Substring(0, 1));
+                string test = drive.Substring(3);
+                if (drive.Substring(3) != "0")
+                    continue;
+
+                result.Add(drive.Substring(0, 1));
             }
             
             return result;
         }
 
-        IEnumerable<DriveInfo> GetUsbDevices()
+        IEnumerable<string> GetUsbDevices()
         {
             string sdName = ConfigurationManager.AppSettings["Configured_Capture_Name"];
-            IEnumerable<string> usbDrivesLetters = from drive in new ManagementObjectSearcher("select * from Win32_DiskDrive WHERE InterfaceType='USB' AND Caption='" + sdName + "'").Get().Cast<ManagementObject>()
+            IEnumerable<string> usbDrivesLetters = from drive in new ManagementObjectSearcher("select * from Win32_DiskDrive WHERE InterfaceType='USB' AND Caption='" + sdName + "' AND MediaType='Removable Media'").Get().Cast<ManagementObject>()
                                                    from o in drive.GetRelated("Win32_DiskPartition").Cast<ManagementObject>()
                                                    from i in o.GetRelated("Win32_LogicalDisk").Cast<ManagementObject>()
-                                                   select string.Format("{0}\\", i["Name"]);
+                                                   select string.Format("{0} {1}", i["Name"], o["Index"]);
 
-            return from drive in DriveInfo.GetDrives()
-                   where drive.DriveType == DriveType.Removable && usbDrivesLetters.Contains(drive.RootDirectory.Name)
-                   select drive;
+            return usbDrivesLetters;
+            //return from drive in DriveInfo.GetDrives()
+            //       where drive.DriveType == DriveType.Removable && usbDrivesLetters.Contains(drive.RootDirectory.Name)
+            //       select drive;
         }
 
         void FlashImage(string imgPath, string letterPath, int id)
