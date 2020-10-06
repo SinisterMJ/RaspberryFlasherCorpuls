@@ -3,13 +3,11 @@ using System.Collections.Generic;
 using System.Collections.Specialized;
 using System.Configuration;
 using System.Diagnostics;
-using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Windows.Forms;
 using System.Management;
-using System.Linq;
 
 namespace RaspberryFlasher
 {
@@ -104,6 +102,197 @@ namespace RaspberryFlasher
             return colorCode != "";
         }
 
+        struct DriveStats
+        {
+            public int id { get; }
+            public bool online { get; }
+            public string unique_id { get; }
+
+            public DriveStats(int id, bool online, string unique_id)
+            {
+                this.id = id;
+                this.online = online;
+                this.unique_id = unique_id;
+            }
+        }
+
+        List<DriveStats> ReadDriveStats()
+        {
+            List<DriveStats> result = new List<DriveStats>();
+            Process process = new Process();
+            process.StartInfo.FileName = "diskpart.exe";
+            process.StartInfo.UseShellExecute = false;
+            process.StartInfo.CreateNoWindow = true;
+            process.StartInfo.RedirectStandardInput = true;
+            process.StartInfo.RedirectStandardOutput = true;
+            process.Start();
+            process.StandardInput.WriteLine("list disk");
+            process.StandardInput.WriteLine("exit");
+            string output = process.StandardOutput.ReadToEnd();
+            process.WaitForExit();
+
+            string[] outputs = output.Split('\n');
+
+            foreach (string line in outputs)
+            {
+                if (line.Contains("Online") || line.Contains("Offline"))
+                {
+                    var regex = new Regex(".*([0-9]).* (.*line)");
+                    var matches = regex.Matches(line);
+                    int id = -1; 
+                    bool online = false;
+                    foreach (Match match in matches)
+                    {
+                        var coll = match.Groups;
+                        id = Convert.ToInt32(coll[1].Value);
+                        online = (coll[2].Value == "Online");
+                    }
+
+                    DriveStats entry = new DriveStats(id, online, "");
+                    result.Add(entry);
+                }
+            }
+
+            for (int i = 0; i < result.Count; ++i)
+            {
+                process.Start();
+                process.StandardInput.WriteLine("select disk " + result[i].id);
+                process.StandardInput.WriteLine("uniqueid disk");
+                process.StandardInput.WriteLine("exit");
+                string output_id = process.StandardOutput.ReadToEnd();
+                process.WaitForExit();
+
+                foreach (string line in output_id.Split('\n'))
+                {
+                    if (line.Contains("ger-ID"))
+                    {
+                        var regex = new Regex("ger-ID: ([0-9a-fA-F]*)");
+                        var matches = regex.Matches(line);
+                        string unique_id = "";
+                        foreach (Match match in matches)
+                        {
+                            var coll = match.Groups;
+                            unique_id = coll[1].Value;
+                        }
+
+                        if (unique_id == "")
+                        {
+                            result.RemoveAt(i);
+                            i--;
+                            continue;
+                        }
+                        result[i] = new DriveStats(result[i].id, result[i].online, unique_id);
+                    }
+                }
+            }
+
+            return result;
+        }
+
+        void SetUniqueID(int id, string new_unique)
+        {
+            Process process = new Process();
+            process.StartInfo.FileName = "diskpart.exe";
+            process.StartInfo.UseShellExecute = false;
+            process.StartInfo.CreateNoWindow = true;
+            process.StartInfo.RedirectStandardInput = true;
+            process.StartInfo.RedirectStandardOutput = true;
+            process.Start();
+            process.StandardInput.WriteLine("select disk " + id.ToString());
+            process.StandardInput.WriteLine("uniqueid disk id=" + new_unique);
+            process.StandardInput.WriteLine("exit");
+            string output = process.StandardOutput.ReadToEnd();
+            process.WaitForExit();
+        }
+
+        bool DistributeUniqueIDs(List<DriveStats> stats)
+        {
+            bool changed = false;
+            List<string> all_ids = new List<string>();
+            List<string> unique_ids = new List<string>();
+
+            foreach (var drive in stats)
+            {
+                if (all_ids.Contains(drive.unique_id))
+                {
+                    unique_ids.Add(drive.unique_id);
+                }
+
+                all_ids.Add(drive.unique_id);
+                all_ids = all_ids.Distinct().ToList();
+                unique_ids = unique_ids.Distinct().ToList();
+            }
+
+            foreach (var drive in stats)
+            {
+                if (!drive.online)
+                {
+                    if (unique_ids.Contains(drive.unique_id))
+                    {
+                        int intValue = int.Parse(drive.unique_id, System.Globalization.NumberStyles.HexNumber);
+                        int startValue = intValue - 1;
+                        while (intValue != startValue)
+                        {                            
+                            string hexValue = (++intValue).ToString("X8");
+                            if (!unique_ids.Contains(hexValue))
+                            {
+                                SetUniqueID(drive.id, hexValue);
+                                unique_ids.Add(hexValue);
+                                changed = true;
+                                break;
+                            }
+                        }
+                    }
+                    else
+                    {
+                        MessageBox.Show("Error occured. Drive is offline, but also has a unique id. Unknown error. Please contact developer.");
+                    }
+                }
+            }
+
+            return changed;
+        }
+
+        void RestartUSBReader()
+        {
+            Process process = new Process();
+            process.StartInfo.FileName = ConfigurationManager.AppSettings["CLI.Tool"] + "devcon.exe";
+            process.StartInfo.Arguments = "disable \"@" + ConfigurationManager.AppSettings["Hardware_ID"] + "\"\\*\"";
+            process.StartInfo.UseShellExecute = false;
+            process.StartInfo.CreateNoWindow = true;
+            process.StartInfo.RedirectStandardInput = true;
+            process.StartInfo.RedirectStandardOutput = true;
+            process.Start();
+            process.WaitForExit();
+
+            process.StartInfo.FileName = ConfigurationManager.AppSettings["CLI.Tool"] + "devcon.exe";
+            process.StartInfo.Arguments = "enable \"@" + ConfigurationManager.AppSettings["Hardware_ID"] + "\"\\*\"";
+            process.StartInfo.UseShellExecute = false;
+            process.StartInfo.CreateNoWindow = true;
+            process.StartInfo.RedirectStandardInput = true;
+            process.StartInfo.RedirectStandardOutput = true;
+            process.Start();
+            process.WaitForExit();
+        }
+
+        bool BringAllOnline()
+        {
+            SetLabelVisibility(true, 1);
+            
+            SetLabelText("Checke aktuellen Stand der USB Laufwerke", 1);
+            var stats = ReadDriveStats();
+
+            SetLabelText("Überprüfe auf einzigartige IDs", 1);
+            if (DistributeUniqueIDs(stats))
+            {
+                SetLabelText("IDs geändert. USB Treiber wird neu gestartet. Dies dauert ein paar Sekunden.", 1);
+                RestartUSBReader();
+            }
+            Thread.Sleep(10000);
+            
+            return true;
+        }
+
         List<string> DriveLetters()
         {
             List<string> result = new List<string>();
@@ -131,23 +320,18 @@ namespace RaspberryFlasher
                                                    select string.Format("{0} {1}", i["Name"], o["Index"]);
 
             return usbDrivesLetters;
-            //return from drive in DriveInfo.GetDrives()
-            //       where drive.DriveType == DriveType.Removable && usbDrivesLetters.Contains(drive.RootDirectory.Name)
-            //       select drive;
         }
 
         void FlashImage(string imgPath, string letterPath, int id)
         {
             Process process = new Process();
-            process.StartInfo.FileName = ConfigurationManager.AppSettings["CLI.Tool"];
+            process.StartInfo.FileName = ConfigurationManager.AppSettings["CLI.Tool"] + "CommandLineDiskImager.exe";
             process.StartInfo.Arguments = imgPath + " " + letterPath;
             process.StartInfo.UseShellExecute = false;
             process.StartInfo.RedirectStandardOutput = true;
             process.StartInfo.RedirectStandardError = true;
             process.StartInfo.WindowStyle = ProcessWindowStyle.Hidden;
             process.StartInfo.CreateNoWindow = true;
-
-            //process.OutputDataReceived += new DataReceivedEventHandler(OutputHandler);
 
             process.OutputDataReceived += 
                 (object _sender, DataReceivedEventArgs _args) =>
@@ -171,12 +355,17 @@ namespace RaspberryFlasher
                 SetLabelText("", i);
             }
 
-            //* Create your Process
+            if (!BringAllOnline())
+            {
+                MessageBox.Show("Nicht alle SD Karten wurden erfolgreich gestartet. Bitte ARO kontaktieren.");
+            }
             List<string> drives = DriveLetters();
 
-            if (drives.Count != 4)
+            int count_warning = Convert.ToInt32(ConfigurationManager.AppSettings["Num_SD_Cards"]);
+
+            if (drives.Count != count_warning && ConfigurationManager.AppSettings["Show_Warning"] != "False")
             {
-                string text = (drives.Count < 4 ? "Weniger" : "Mehr") + " als 4 Datenträger gefunden. Fortfahren?";
+                string text = (drives.Count < count_warning ? "Weniger" : "Mehr") + " als " + count_warning.ToString() + " Datenträger gefunden. Fortfahren?";
                 if (MessageBox.Show(text, "Datenträger Anzahl", MessageBoxButtons.YesNo) == DialogResult.No)
                 {
                     ResetForm();
