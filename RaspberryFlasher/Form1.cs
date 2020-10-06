@@ -209,35 +209,35 @@ namespace RaspberryFlasher
         {
             bool changed = false;
             List<string> all_ids = new List<string>();
-            List<string> unique_ids = new List<string>();
+            List<string> multiple_ids = new List<string>();
 
             foreach (var drive in stats)
             {
                 if (all_ids.Contains(drive.unique_id))
                 {
-                    unique_ids.Add(drive.unique_id);
+                    multiple_ids.Add(drive.unique_id);
                 }
 
                 all_ids.Add(drive.unique_id);
                 all_ids = all_ids.Distinct().ToList();
-                unique_ids = unique_ids.Distinct().ToList();
+                multiple_ids = multiple_ids.Distinct().ToList();
             }
 
             foreach (var drive in stats)
             {
                 if (!drive.online)
                 {
-                    if (unique_ids.Contains(drive.unique_id))
+                    if (multiple_ids.Contains(drive.unique_id))
                     {
                         int intValue = int.Parse(drive.unique_id, System.Globalization.NumberStyles.HexNumber);
                         int startValue = intValue - 1;
                         while (intValue != startValue)
                         {                            
                             string hexValue = (++intValue).ToString("X8");
-                            if (!unique_ids.Contains(hexValue))
+                            if (!multiple_ids.Contains(hexValue))
                             {
                                 SetUniqueID(drive.id, hexValue);
-                                unique_ids.Add(hexValue);
+                                multiple_ids.Add(hexValue);
                                 changed = true;
                                 break;
                             }
@@ -257,20 +257,16 @@ namespace RaspberryFlasher
         {
             Process process = new Process();
             process.StartInfo.FileName = ConfigurationManager.AppSettings["CLI.Tool"] + "devcon.exe";
-            process.StartInfo.Arguments = "disable \"@" + ConfigurationManager.AppSettings["Hardware_ID"] + "\"\\*\"";
             process.StartInfo.UseShellExecute = false;
             process.StartInfo.CreateNoWindow = true;
             process.StartInfo.RedirectStandardInput = true;
             process.StartInfo.RedirectStandardOutput = true;
+            
+            process.StartInfo.Arguments = "disable \"@" + ConfigurationManager.AppSettings["Hardware_ID"] + "\"\\*\"";
             process.Start();
             process.WaitForExit();
 
-            process.StartInfo.FileName = ConfigurationManager.AppSettings["CLI.Tool"] + "devcon.exe";
             process.StartInfo.Arguments = "enable \"@" + ConfigurationManager.AppSettings["Hardware_ID"] + "\"\\*\"";
-            process.StartInfo.UseShellExecute = false;
-            process.StartInfo.CreateNoWindow = true;
-            process.StartInfo.RedirectStandardInput = true;
-            process.StartInfo.RedirectStandardOutput = true;
             process.Start();
             process.WaitForExit();
         }
@@ -287,8 +283,8 @@ namespace RaspberryFlasher
             {
                 SetLabelText("IDs geändert. USB Treiber wird neu gestartet. Dies dauert ein paar Sekunden.", 1);
                 RestartUSBReader();
+                Thread.Sleep(10000);
             }
-            Thread.Sleep(10000);
             
             return true;
         }
@@ -301,7 +297,6 @@ namespace RaspberryFlasher
 
             foreach (var drive in drives)
             {
-                string test = drive.Substring(3);
                 if (drive.Substring(3) != "0")
                     continue;
 
@@ -387,18 +382,9 @@ namespace RaspberryFlasher
                 local.Start();
                 allThreads.Add(local);
             }
-                        
-            while(true)
-            {
-                bool stop = true;
-                foreach(Thread t in allThreads)
-                {
-                    stop = stop && (!t.IsAlive);
-                }
 
-                if (stop)
-                    break;
-            }
+            foreach (Thread t in allThreads)
+                t.Join();
 
             ResetForm();
         }

@@ -45,7 +45,7 @@
             // textBox_SerialNumber
             // 
             this.textBox_SerialNumber.Font = new System.Drawing.Font("Microsoft Sans Serif", 15F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
-            this.textBox_SerialNumber.Location = new System.Drawing.Point(436, 37);
+            this.textBox_SerialNumber.Location = new System.Drawing.Point(331, 37);
             this.textBox_SerialNumber.Margin = new System.Windows.Forms.Padding(4);
             this.textBox_SerialNumber.Multiline = true;
             this.textBox_SerialNumber.Name = "textBox_SerialNumber";
@@ -175,7 +175,7 @@
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(8F, 16F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
-            this.ClientSize = new System.Drawing.Size(969, 434);
+            this.ClientSize = new System.Drawing.Size(969, 505);
             this.ControlBox = false;
             this.Controls.Add(this.label8);
             this.Controls.Add(this.label7);
@@ -188,6 +188,7 @@
             this.Controls.Add(this.label1);
             this.Controls.Add(this.labelProductCode);
             this.Controls.Add(this.textBox_SerialNumber);
+            this.FormBorderStyle = System.Windows.Forms.FormBorderStyle.FixedSingle;
             this.Icon = ((System.Drawing.Icon)(resources.GetObject("$this.Icon")));
             this.Margin = new System.Windows.Forms.Padding(4);
             this.MaximizeBox = false;
