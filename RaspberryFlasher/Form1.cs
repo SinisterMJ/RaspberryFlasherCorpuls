@@ -8,15 +8,31 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using System.Windows.Forms;
 using System.Management;
+using log4net;
+using log4net.Config;
 
 namespace RaspberryFlasher
 {
-    public partial class Form1 : Form
+    public partial class FlashingApplication : Form
     {
         private Thread worker;
-        public Form1()
+        private static readonly ILog log = LogManager.GetLogger("CorpSim.FlashingApplication");
+        public FlashingApplication()
         {
-            InitializeComponent(); 
+            XmlConfigurator.Configure();
+            log.Info("Starting application.");
+            
+            InitializeComponent();
+            string path_cli = ConfigurationManager.AppSettings["CLI.Tool"];
+            if (path_cli[path_cli.Length - 1] != '\\')
+                ConfigurationManager.AppSettings["CLI.Tool"] += "\\";
+
+            string path_images = ConfigurationManager.AppSettings["ImageFolder"];
+            if (path_images[path_images.Length - 1] != '\\')
+                ConfigurationManager.AppSettings["ImageFolder"] += "\\";
+
+            log.Info("Path for CLI Tools: " + ConfigurationManager.AppSettings["CLI.Tool"]);
+            log.Info("Path for Images: " + ConfigurationManager.AppSettings["ImageFolder"]);
         }
 
         void SetTextBoxText(string newText)
@@ -182,6 +198,7 @@ namespace RaspberryFlasher
                             continue;
                         }
                         result[i] = new DriveStats(result[i].id, result[i].online, unique_id);
+                        log.Debug("Found drive. ID: " + result[i].id + " Online: " + result[i].online + " UID: " + unique_id);
                     }
                 }
             }
@@ -203,6 +220,7 @@ namespace RaspberryFlasher
             process.StandardInput.WriteLine("exit");
             string output = process.StandardOutput.ReadToEnd();
             process.WaitForExit();
+            log.Debug("Changed UID on disk " + id + " to " + new_unique + ".");
         }
 
         bool DistributeUniqueIDs(List<DriveStats> stats)
@@ -223,6 +241,9 @@ namespace RaspberryFlasher
                 multiple_ids = multiple_ids.Distinct().ToList();
             }
 
+            foreach (var id in multiple_ids)
+                log.Debug("Multiple ID found: " + id);
+
             foreach (var drive in stats)
             {
                 if (!drive.online)
@@ -234,10 +255,10 @@ namespace RaspberryFlasher
                         while (intValue != startValue)
                         {                            
                             string hexValue = (++intValue).ToString("X8");
-                            if (!multiple_ids.Contains(hexValue))
+                            if (!all_ids.Contains(hexValue))
                             {
                                 SetUniqueID(drive.id, hexValue);
-                                multiple_ids.Add(hexValue);
+                                all_ids.Add(hexValue);
                                 changed = true;
                                 break;
                             }
@@ -246,6 +267,8 @@ namespace RaspberryFlasher
                     else
                     {
                         MessageBox.Show("Error occured. Drive is offline, but also has a unique id. Unknown error. Please contact developer.");
+                        log.Fatal("Error occured. Drive is offline, but also has a unique id. Unknown error. Please contact developer.");
+                        Application.Exit();
                     }
                 }
             }
@@ -261,11 +284,13 @@ namespace RaspberryFlasher
             process.StartInfo.CreateNoWindow = true;
             process.StartInfo.RedirectStandardInput = true;
             process.StartInfo.RedirectStandardOutput = true;
-            
+
+            log.Info("Shutting down USB reader hardware device.");
             process.StartInfo.Arguments = "disable \"@" + ConfigurationManager.AppSettings["Hardware_ID"] + "\"\\*\"";
             process.Start();
             process.WaitForExit();
 
+            log.Info("Starting USB reader hardware device.");
             process.StartInfo.Arguments = "enable \"@" + ConfigurationManager.AppSettings["Hardware_ID"] + "\"\\*\"";
             process.Start();
             process.WaitForExit();
@@ -281,9 +306,11 @@ namespace RaspberryFlasher
             SetLabelText("Überprüfe auf einzigartige IDs", 1);
             if (DistributeUniqueIDs(stats))
             {
-                SetLabelText("IDs geändert. USB Treiber wird neu gestartet. Dies dauert ein paar Sekunden.", 1);
+                log.Info("IDs were changed. Restarting USB device");
+                int waitTime = Convert.ToInt32(ConfigurationManager.AppSettings["WaitTime"]);
+                SetLabelText("IDs geändert. USB Treiber wird neu gestartet. Dies dauert etwa " + (waitTime / 1000).ToString() + " Sekunden.", 1);
                 RestartUSBReader();
-                Thread.Sleep(10000);
+                Thread.Sleep(waitTime);
             }
             
             return true;
@@ -321,7 +348,7 @@ namespace RaspberryFlasher
         {
             Process process = new Process();
             process.StartInfo.FileName = ConfigurationManager.AppSettings["CLI.Tool"] + "CommandLineDiskImager.exe";
-            process.StartInfo.Arguments = imgPath + " " + letterPath;
+            process.StartInfo.Arguments = "\"" + imgPath + "\" " + letterPath;
             process.StartInfo.UseShellExecute = false;
             process.StartInfo.RedirectStandardOutput = true;
             process.StartInfo.RedirectStandardError = true;
@@ -332,6 +359,9 @@ namespace RaspberryFlasher
                 (object _sender, DataReceivedEventArgs _args) =>
                     OutputHandler(id, _sender, _args);
 
+            log.Debug("Starting process[" + id + "]: " + process.StartInfo.FileName);
+            log.Debug("Arguments[" + id + "]: " + process.StartInfo.Arguments);
+
             process.Start();
             process.BeginOutputReadLine();
             process.WaitForExit();
@@ -340,6 +370,7 @@ namespace RaspberryFlasher
             {
                 SetLabelText("SD Karte " + id.ToString() + ": Fehlerhaft. Fehlercode " + process.ExitCode.ToString(), id); ;
             }
+            log.Debug("ExitCode[" + id + "]:" + process.ExitCode);
         }
 
         void RunCommand(string colorCode)
@@ -352,12 +383,16 @@ namespace RaspberryFlasher
 
             if (!BringAllOnline())
             {
-                MessageBox.Show("Nicht alle SD Karten wurden erfolgreich gestartet. Bitte ARO kontaktieren.");
+                log.Error("Nicht alle SD Karten wurden erfolgreich gestartet. Bitte ARO kontaktieren.");
             }
             List<string> drives = DriveLetters();
+            log.Info("Total SD cards found: " + drives.Count.ToString());
+
+            foreach (var drive in drives)
+                log.Info("Found SD Card at " + drive);
 
             int count_warning = Convert.ToInt32(ConfigurationManager.AppSettings["Num_SD_Cards"]);
-
+            
             if (drives.Count != count_warning && ConfigurationManager.AppSettings["Show_Warning"] != "False")
             {
                 string text = (drives.Count < count_warning ? "Weniger" : "Mehr") + " als " + count_warning.ToString() + " Datenträger gefunden. Fortfahren?";
@@ -374,6 +409,8 @@ namespace RaspberryFlasher
             int count = 1;
             int count_thread = 1;
             List<Thread> allThreads = new List<Thread>();
+
+            log.Debug("Spawning threads to write images.");
 
             foreach (string drive in drives)
             {
@@ -415,6 +452,8 @@ namespace RaspberryFlasher
                 ResetForm();
                 return;
             }
+
+            log.Info("Writing " + color + " images to SD cards.");
 
             SetTextBoxEnabled(false);
             SetButtonExitEnabled(false);
