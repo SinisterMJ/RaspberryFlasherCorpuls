@@ -1,121 +1,27 @@
-﻿using System;
+﻿using log4net;
+using System;
 using System.Collections.Generic;
-using System.Collections.Specialized;
 using System.Configuration;
 using System.Diagnostics;
 using System.Linq;
+using System.Management;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Windows.Forms;
-using System.Management;
-using log4net;
-using log4net.Config;
 
 namespace RaspberryFlasher
 {
-    public partial class FlashingApplication : Form
+    class SD_Card_Handler
     {
-        private Thread worker;
+        private string vendorID;
+        private string sdcardID;
+        private readonly FlashingApplication mainForm;
         private static readonly ILog log = LogManager.GetLogger("CorpSim.FlashingApplication");
-        public FlashingApplication()
+        public SD_Card_Handler(FlashingApplication form)
         {
-            XmlConfigurator.Configure();
-            log.Info("Starting application.");
-            
-            InitializeComponent();
-            string path_cli = ConfigurationManager.AppSettings["CLI.Tool"];
-            if (path_cli[path_cli.Length - 1] != '\\')
-                ConfigurationManager.AppSettings["CLI.Tool"] += "\\";
-
-            string path_images = ConfigurationManager.AppSettings["ImageFolder"];
-            if (path_images[path_images.Length - 1] != '\\')
-                ConfigurationManager.AppSettings["ImageFolder"] += "\\";
-
-            log.Info("Path for CLI Tools: " + ConfigurationManager.AppSettings["CLI.Tool"]);
-            log.Info("Path for Images: " + ConfigurationManager.AppSettings["ImageFolder"]);
-        }
-
-        void SetTextBoxText(string newText)
-        {
-            this.UIThreadAsync(delegate
-            {
-                textBox_SerialNumber.Text = newText;
-                Refresh();
-            });
-        }
-
-        void SetTextBoxEnabled(bool enabled)
-        {
-            this.UIThreadAsync(delegate
-            {
-                textBox_SerialNumber.Enabled = enabled;
-                Refresh();
-            });
-        }
-
-        void SetTextBoxFocus()
-        {
-            this.UIThreadAsync(delegate
-            {
-                textBox_SerialNumber.Focus();
-            });
-        }
-
-        void SetLabelText(string text, int id)
-        {
-            string labelName = "label" + id.ToString();
-
-            foreach(Control c in this.Controls)
-            {
-                if (c.Name == labelName)
-                {
-                    this.UIThreadAsync(delegate
-                    {
-                        c.Text = text;
-                        Refresh();
-                    });
-                }
-            }
-        }
-
-        void SetLabelVisibility(bool enabled, int id)
-        {
-            string labelName = "label" + id.ToString();
-
-            foreach (Control c in Controls)
-            {
-                if (c.Name == labelName)
-                {
-                    this.UIThreadAsync(delegate
-                    {
-                        c.Visible = enabled;
-                        Refresh();
-                    });
-                }
-            }
-        }
-
-        void SetButtonExitEnabled(bool enabled)
-        {
-            this.UIThreadAsync(delegate
-            {
-                buttonExit.Enabled = enabled;
-            });
-        }
-
-        private bool GetColorCode(out string colorCode)
-        {
-            string productCode = textBox_SerialNumber.Text;
-
-            NameValueCollection config = ConfigurationManager.GetSection("productKeys") as NameValueCollection;
-            colorCode = "";
-            
-            if (config.AllKeys.Contains(productCode))
-            {
-                colorCode = config[productCode];
-            }
-
-            return colorCode != "";
+            mainForm = form;
+            vendorID = ConfigurationManager.AppSettings["Hardware_ID"];
+            sdcardID = ConfigurationManager.AppSettings["Configured_Capture_Name"];
         }
 
         struct DriveStats
@@ -155,7 +61,7 @@ namespace RaspberryFlasher
                 {
                     var regex = new Regex(".*([0-9]).* (.*line)");
                     var matches = regex.Matches(line);
-                    int id = -1; 
+                    int id = -1;
                     bool online = false;
                     foreach (Match match in matches)
                     {
@@ -206,6 +112,16 @@ namespace RaspberryFlasher
             return result;
         }
 
+        public List<string> GetAllDrives()
+        {            
+            BringAllOnline();
+            List<string> drives = DriveLetters();
+
+            return drives;
+        }
+
+
+
         void SetUniqueID(int id, string new_unique)
         {
             Process process = new Process();
@@ -253,7 +169,7 @@ namespace RaspberryFlasher
                         int intValue = int.Parse(drive.unique_id, System.Globalization.NumberStyles.HexNumber);
                         int startValue = intValue - 1;
                         while (intValue != startValue)
-                        {                            
+                        {
                             string hexValue = (++intValue).ToString("X8");
                             if (!all_ids.Contains(hexValue))
                             {
@@ -268,7 +184,6 @@ namespace RaspberryFlasher
                     {
                         MessageBox.Show("Error occured. Drive is offline, but also has a unique id. Unknown error. Please contact developer.");
                         log.Fatal("Error occured. Drive is offline, but also has a unique id. Unknown error. Please contact developer.");
-                        Application.Exit();
                     }
                 }
             }
@@ -298,21 +213,21 @@ namespace RaspberryFlasher
 
         bool BringAllOnline()
         {
-            SetLabelVisibility(true, 1);
-            
-            SetLabelText("Checke aktuellen Stand der USB Laufwerke", 1);
+            mainForm.SetLabelVisibility(true, 1);
+
+            mainForm.SetLabelText("Checke aktuellen Stand der USB Laufwerke", 1);
             var stats = ReadDriveStats();
 
-            SetLabelText("Überprüfe auf einzigartige IDs", 1);
+            mainForm.SetLabelText("Überprüfe auf einzigartige IDs", 1);
             if (DistributeUniqueIDs(stats))
             {
                 log.Info("IDs were changed. Restarting USB device");
                 int waitTime = Convert.ToInt32(ConfigurationManager.AppSettings["WaitTime"]);
-                SetLabelText("IDs geändert. USB Treiber wird neu gestartet. Dies dauert etwa " + (waitTime / 1000).ToString() + " Sekunden.", 1);
+                mainForm.SetLabelText("IDs geändert. USB Treiber wird neu gestartet. Dies dauert etwa " + (waitTime / 1000).ToString() + " Sekunden.", 1);
                 RestartUSBReader();
                 Thread.Sleep(waitTime);
             }
-            
+
             return true;
         }
 
@@ -329,7 +244,7 @@ namespace RaspberryFlasher
 
                 result.Add(drive.Substring(0, 1));
             }
-            
+
             return result;
         }
 
@@ -342,138 +257,6 @@ namespace RaspberryFlasher
                                                    select string.Format("{0} {1}", i["Name"], o["Index"]);
 
             return usbDrivesLetters;
-        }
-
-        void FlashImage(string imgPath, string letterPath, int id)
-        {
-            Process process = new Process();
-            process.StartInfo.FileName = ConfigurationManager.AppSettings["CLI.Tool"] + "CommandLineDiskImager.exe";
-            process.StartInfo.Arguments = "\"" + imgPath + "\" " + letterPath;
-            process.StartInfo.UseShellExecute = false;
-            process.StartInfo.RedirectStandardOutput = true;
-            process.StartInfo.RedirectStandardError = true;
-            process.StartInfo.WindowStyle = ProcessWindowStyle.Hidden;
-            process.StartInfo.CreateNoWindow = true;
-
-            process.OutputDataReceived += 
-                (object _sender, DataReceivedEventArgs _args) =>
-                    OutputHandler(id, _sender, _args);
-
-            log.Debug("Starting process[" + id + "]: " + process.StartInfo.FileName);
-            log.Debug("Arguments[" + id + "]: " + process.StartInfo.Arguments);
-
-            process.Start();
-            process.BeginOutputReadLine();
-            process.WaitForExit();
-            SetLabelText("SD Karte " + id.ToString() + ": Beendet.", id);
-            if (process.ExitCode != 0)
-            {
-                SetLabelText("SD Karte " + id.ToString() + ": Fehlerhaft. Fehlercode " + process.ExitCode.ToString(), id); ;
-            }
-            log.Debug("ExitCode[" + id + "]:" + process.ExitCode);
-        }
-
-        void RunCommand(string colorCode)
-        {
-            for (int i = 1; i <= 6; ++i)
-            {
-                SetLabelVisibility(false, i);
-                SetLabelText("", i);
-            }
-
-            if (!BringAllOnline())
-            {
-                log.Error("Nicht alle SD Karten wurden erfolgreich gestartet. Bitte ARO kontaktieren.");
-            }
-            List<string> drives = DriveLetters();
-            log.Info("Total SD cards found: " + drives.Count.ToString());
-
-            foreach (var drive in drives)
-                log.Info("Found SD Card at " + drive);
-
-            int count_warning = Convert.ToInt32(ConfigurationManager.AppSettings["Num_SD_Cards"]);
-            
-            if (drives.Count != count_warning && ConfigurationManager.AppSettings["Show_Warning"] != "False")
-            {
-                string text = (drives.Count < count_warning ? "Weniger" : "Mehr") + " als " + count_warning.ToString() + " Datenträger gefunden. Fortfahren?";
-                if (MessageBox.Show(text, "Datenträger Anzahl", MessageBoxButtons.YesNo) == DialogResult.No)
-                {
-                    ResetForm();
-                    return;
-                }
-            }
-
-            string basePath = ConfigurationManager.AppSettings["ImageFolder"];
-            string version = ConfigurationManager.AppSettings["Image_Version"];
-            string fileName = basePath + "Corpuls_Simulation_" + colorCode + "_" + version + ".img";
-            int count = 1;
-            int count_thread = 1;
-            List<Thread> allThreads = new List<Thread>();
-
-            log.Debug("Spawning threads to write images.");
-
-            foreach (string drive in drives)
-            {
-                SetLabelVisibility(true, count++);
-                Thread local = new Thread(() => FlashImage(fileName, drive, count_thread++));
-                local.Start();
-                allThreads.Add(local);
-            }
-
-            foreach (Thread t in allThreads)
-                t.Join();
-
-            ResetForm();
-        }
-
-        void ResetForm()
-        {
-            SetTextBoxEnabled(true);
-            SetButtonExitEnabled(true);
-            SetTextBoxText("");
-            SetTextBoxFocus();
-        }
-        void OutputHandler(int id, object sendingProcess, DataReceivedEventArgs outLine)
-        {
-            if (outLine.Data != null)
-            {
-                string[] bytes = outLine.Data.Split('/');
-                Int64 percent = Convert.ToInt64(bytes[0]) * 100 / Convert.ToInt64(bytes[1]);
-                SetLabelText("SD Karte " + id.ToString() + ": " + percent.ToString("D" + 2) + "% geschrieben.", id);
-            }
-        }
-
-        private void workingThread()
-        {
-            string color;
-            if (!GetColorCode(out color))
-            {
-                MessageBox.Show("Ungültiger Produktcode. Bitte erneut scannen.");
-                ResetForm();
-                return;
-            }
-
-            log.Info("Writing " + color + " images to SD cards.");
-
-            SetTextBoxEnabled(false);
-            SetButtonExitEnabled(false);
-            RunCommand(color);
-        }
-
-        private void textBox_SerialNumber_KeyPress(object sender, KeyPressEventArgs e)
-        {
-            if (e.KeyChar == (char) Keys.Enter)
-            {
-                e.Handled = true;
-                ThreadStart work = workingThread;
-                worker = new Thread(work);
-                worker.Start();
-            }
-        }
-
-        private void buttonExit_Click(object sender, EventArgs e)
-        {
-            Application.Exit();
         }
     }
 }
