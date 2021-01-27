@@ -120,7 +120,27 @@ namespace RaspberryFlasher
             return drives;
         }
 
-
+        void ClearPartitions(int id)
+        {
+            Process process = new Process();
+            process.StartInfo.FileName = "diskpart.exe";
+            process.StartInfo.UseShellExecute = false;
+            process.StartInfo.CreateNoWindow = true;
+            process.StartInfo.RedirectStandardInput = true;
+            process.StartInfo.RedirectStandardOutput = true;
+            process.Start();
+            process.StandardInput.WriteLine("select disk " + id.ToString());
+            process.StandardInput.WriteLine("clean");
+            process.StandardInput.WriteLine("create partition primary");
+            process.StandardInput.WriteLine("active");
+            process.StandardInput.WriteLine("select partition 1");
+            process.StandardInput.WriteLine("format fs=fat32 quick");
+            process.StandardInput.WriteLine("assign");
+            process.StandardInput.WriteLine("exit");
+            string output = process.StandardOutput.ReadToEnd();
+            process.WaitForExit();
+            log.Debug("Cleaned partitions on disk " + id);
+        }
 
         void SetUniqueID(int id, string new_unique)
         {
@@ -226,6 +246,13 @@ namespace RaspberryFlasher
                 mainForm.SetLabelText("IDs geändert. USB Treiber wird neu gestartet. Dies dauert etwa " + (waitTime / 1000).ToString() + " Sekunden.", 1);
                 RestartUSBReader();
                 Thread.Sleep(waitTime);
+            }
+
+            stats = ReadDriveStats();
+
+            foreach (var drive in stats)
+            {
+                ClearPartitions(drive.id);
             }
 
             return true;

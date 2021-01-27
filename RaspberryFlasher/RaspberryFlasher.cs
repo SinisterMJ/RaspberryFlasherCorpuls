@@ -82,6 +82,15 @@ namespace RaspberryFlasher
             });
         }
 
+        void SetTextBoxVisible(bool visible)
+        {
+            this.UIThreadAsync(delegate
+            {
+                textBox_SerialNumber.Visible = visible;
+                Refresh();
+            });
+        }
+
         void SetTextBoxFocus()
         {
             this.UIThreadAsync(delegate
@@ -106,6 +115,15 @@ namespace RaspberryFlasher
                 }
             }
         }
+
+        public void SetLabelProductCodeText(string text)
+        {
+            this.UIThreadAsync(delegate
+            {
+                labelProductCode.Text = text;
+                Refresh();
+            });            
+        }        
 
         public void SetLabelVisibility(bool enabled, int id)
         {
@@ -247,12 +265,12 @@ namespace RaspberryFlasher
             foreach (Thread t in allThreads)
                 t.Join();
 
-            ResetForm();
+            ResetForm(false);
         }
 
-        void ResetForm()
+        void ResetForm(bool complete = true)
         {
-            for (int i = 2; i <= 8; ++i)
+            for (int i = 2; i <= 8 && complete; ++i)
             {
                 SetLabelVisibility(false, i);
                 SetLabelText("", i);
@@ -260,9 +278,12 @@ namespace RaspberryFlasher
 
             SetTextBoxEnabled(true);
             SetButtonExitEnabled(true);
+            SetTextBoxVisible(true);
             SetTextBoxText("");
             SetTextBoxFocus();
+            SetLabelProductCodeText("Produktcode scannen");            
         }
+
         void OutputHandler(int id, object sendingProcess, DataReceivedEventArgs outLine)
         {
             if (outLine.Data != null)
@@ -285,8 +306,9 @@ namespace RaspberryFlasher
 
             log.Info("Writing " + color + " images to SD cards.");
 
-            SetTextBoxEnabled(false);
+            SetTextBoxVisible(false);
             SetButtonExitEnabled(false);
+            SetLabelProductCodeText("Schreibe Corpuls Simulation " + color);
             RunCommand(color);
         }
 
