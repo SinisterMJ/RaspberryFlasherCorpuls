@@ -170,6 +170,7 @@ namespace RaspberryFlasher
             SetLabelText("SD Karte " + id.ToString() + ": Schreiben initialisiert.", id);
             int count = 0;
             const int max_tries = 6;
+            int errorCode = -1;
             while (count < max_tries)
             {
                 Process process = new Process();
@@ -194,6 +195,7 @@ namespace RaspberryFlasher
                 SetLabelText("SD Karte " + id.ToString() + ": Beendet.", id);
                 if (process.ExitCode != 0)
                 {
+                    errorCode = process.ExitCode;
                     string text = "SD Karte " + id.ToString() + ": Fehlerhaft. Fehlercode " + process.ExitCode.ToString();
                     log.Error("ExitCode[" + id + "]:" + process.ExitCode);
                     if (count < max_tries)
@@ -212,6 +214,7 @@ namespace RaspberryFlasher
                     return;
                 }
             }
+            SetLabelText("SD Karte konnte nicht bespielt werden. Fehlercode: " + errorCode, id);
             log.Fatal("Could not write to SD card " + id);
         }
 

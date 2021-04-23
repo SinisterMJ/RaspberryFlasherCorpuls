@@ -116,11 +116,10 @@ namespace RaspberryFlasher
         {            
             BringAllOnline();
             List<string> drives = DriveLetters();
-
             return drives;
         }
 
-        void ClearPartitions(int id)
+        void ClearPartitions(int id, int show_id)
         {
             Process process = new Process();
             process.StartInfo.FileName = "diskpart.exe";
@@ -131,11 +130,11 @@ namespace RaspberryFlasher
             process.Start();
             process.StandardInput.WriteLine("select disk " + id.ToString());
             process.StandardInput.WriteLine("clean");
-            process.StandardInput.WriteLine("create partition primary");
-            process.StandardInput.WriteLine("active");
-            process.StandardInput.WriteLine("select partition 1");
-            process.StandardInput.WriteLine("format fs=fat32 quick");
-            process.StandardInput.WriteLine("assign");
+            //process.StandardInput.WriteLine("create partition primary");
+            //process.StandardInput.WriteLine("active");
+            //process.StandardInput.WriteLine("select partition 1");
+            //process.StandardInput.WriteLine("format fs=fat32 quick");
+            //process.StandardInput.WriteLine("assign");
             process.StandardInput.WriteLine("exit");
             string output = process.StandardOutput.ReadToEnd();
             process.WaitForExit();
@@ -166,6 +165,7 @@ namespace RaspberryFlasher
             List<string> multiple_ids = new List<string>();
 
             foreach (var drive in stats)
+
             {
                 if (all_ids.Contains(drive.unique_id))
                 {
@@ -180,6 +180,10 @@ namespace RaspberryFlasher
             foreach (var id in multiple_ids)
                 log.Debug("Multiple ID found: " + id);
 
+            List<Thread> allThreads = new List<Thread>();
+
+            log.Debug("Spawning threads to distribute unique IDs.");
+
             foreach (var drive in stats)
             {
                 if (!drive.online)
@@ -193,7 +197,10 @@ namespace RaspberryFlasher
                             string hexValue = (++intValue).ToString("X8");
                             if (!all_ids.Contains(hexValue))
                             {
-                                SetUniqueID(drive.id, hexValue);
+                                Thread local = new Thread(() => SetUniqueID(drive.id, hexValue));
+                                local.Start();
+                                allThreads.Add(local);
+
                                 all_ids.Add(hexValue);
                                 changed = true;
                                 break;
@@ -202,11 +209,14 @@ namespace RaspberryFlasher
                     }
                     else
                     {
-                        MessageBox.Show("Error occured. Drive is offline, but also has a unique id. Unknown error. Please contact developer.");
-                        log.Fatal("Error occured. Drive is offline, but also has a unique id. Unknown error. Please contact developer.");
+                        MessageBox.Show("Fehler! Gerät ist offline, hat aber eine einzigartige ID. Unbekannter Fehler, bitte dem Entwickler melden.");
+                        log.Fatal("Error occured. Drive is offline, but also has a unique id. Unknown error. Please contact developer. ID: " + drive.unique_id);
                     }
                 }
             }
+
+            foreach (Thread t in allThreads)
+                t.Join();
 
             return changed;
         }
@@ -238,52 +248,56 @@ namespace RaspberryFlasher
             mainForm.SetLabelText("Checke aktuellen Stand der USB Laufwerke", 1);
             var stats = ReadDriveStats();
 
+            int waitTime = Convert.ToInt32(ConfigurationManager.AppSettings["WaitTime"]);
+
             mainForm.SetLabelText("Überprüfe auf einzigartige IDs", 1);
             if (DistributeUniqueIDs(stats))
             {
                 log.Info("IDs were changed. Restarting USB device");
-                int waitTime = Convert.ToInt32(ConfigurationManager.AppSettings["WaitTime"]);
                 mainForm.SetLabelText("IDs geändert. USB Treiber wird neu gestartet. Dies dauert etwa " + (waitTime / 1000).ToString() + " Sekunden.", 1);
                 RestartUSBReader();
                 Thread.Sleep(waitTime);
+                mainForm.SetLabelText("Treiber neu gestartet. Lösche alle Partitionen", 1);
             }
 
             stats = ReadDriveStats();
 
+            int count = 1;
+            List<Thread> threads = new List<Thread>();
+
             foreach (var drive in stats)
             {
-                ClearPartitions(drive.id);
+                mainForm.SetLabelVisibility(true, count++);
+                Thread local = new Thread(() => ClearPartitions(drive.id, count));
+                local.Start();
+                threads.Add(local);
             }
+
+            foreach (Thread t in threads)
+                t.Join();
+
+            mainForm.SetLabelText("Alle Partitionen unifiziert. Starte USB Treiber neu. Dies dauert etwa " + (waitTime / 1000).ToString() + " Sekunden.", 1);
+            RestartUSBReader();
+            Thread.Sleep(waitTime);
+            mainForm.SetLabelText("Treiber neu gestartet. System sollte nun einsatzbereit sein.", 1);
 
             return true;
         }
 
         List<string> DriveLetters()
         {
-            List<string> result = new List<string>();
-            var usbDrives = GetUsbDevices();
-            var drives = usbDrives.ToList();
-
-            foreach (var drive in drives)
-            {
-                if (drive.Substring(3) != "0")
-                    continue;
-
-                result.Add(drive.Substring(0, 1));
-            }
-
-            return result;
+            var usbDrives = GetUsbDevices();            
+            return usbDrives.ToList();
         }
 
         IEnumerable<string> GetUsbDevices()
         {
             string sdName = ConfigurationManager.AppSettings["Configured_Capture_Name"];
-            IEnumerable<string> usbDrivesLetters = from drive in new ManagementObjectSearcher("select * from Win32_DiskDrive WHERE InterfaceType='USB' AND Caption='" + sdName + "' AND MediaType='Removable Media'").Get().Cast<ManagementObject>()
-                                                   from o in drive.GetRelated("Win32_DiskPartition").Cast<ManagementObject>()
-                                                   from i in o.GetRelated("Win32_LogicalDisk").Cast<ManagementObject>()
-                                                   select string.Format("{0} {1}", i["Name"], o["Index"]);
 
-            return usbDrivesLetters;
+            IEnumerable<string> physicalDrives   = from drive in new ManagementObjectSearcher("select * from Win32_DiskDrive WHERE InterfaceType='USB' AND Caption='" + sdName + "' AND MediaType='Removable Media'").Get().Cast<ManagementObject>()
+                                                   select string.Format("{0}", drive["Name"]);
+            
+            return physicalDrives;
         }
     }
 }
