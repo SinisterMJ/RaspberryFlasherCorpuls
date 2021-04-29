@@ -49,7 +49,7 @@ namespace RaspberryFlasher
                 }
             }
 
-            if (!System.IO.File.Exists(ConfigurationManager.AppSettings["CLI.Tool"] + "CommandLineDiskImager.exe"))
+            if (!System.IO.File.Exists(ConfigurationManager.AppSettings["CLI.Tool"] + "CommandLineFlasher.exe"))
             {
                 log.Fatal("DiskImmager not found.");
                 MessageBox.Show("Critical error. SD Card Flash Utility not found. Please contact developer.");
@@ -174,7 +174,7 @@ namespace RaspberryFlasher
             while (count < max_tries)
             {
                 Process process = new Process();
-                process.StartInfo.FileName = ConfigurationManager.AppSettings["CLI.Tool"] + "CommandLineDiskImager.exe";
+                process.StartInfo.FileName = ConfigurationManager.AppSettings["CLI.Tool"] + "CommandLineFlasher.exe";
                 process.StartInfo.Arguments = "\"" + imgPath + "\" " + letterPath;
                 process.StartInfo.UseShellExecute = false;
                 process.StartInfo.RedirectStandardOutput = true;
@@ -260,6 +260,7 @@ namespace RaspberryFlasher
             foreach (string drive in drives)
             {
                 SetLabelVisibility(true, count++);
+                //FlashImage(fileName, drive, count_thread++);
                 Thread local = new Thread(() => FlashImage(fileName, drive, count_thread++));
                 local.Start();
                 allThreads.Add(local);

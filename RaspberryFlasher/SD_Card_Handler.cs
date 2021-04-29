@@ -114,8 +114,35 @@ namespace RaspberryFlasher
 
         public List<string> GetAllDrives()
         {            
-            BringAllOnline();
+            //BringAllOnline();
             List<string> drives = DriveLetters();
+            List<string> drives_paths = GetUsbDevices_Letters();
+
+            for (int i = 0; i < drives_paths.Count; ++i)
+            {
+                string[] split = drives_paths[i].Split(' ');
+                if (split[2] != "0")
+                {
+                    drives_paths.RemoveAt(i);
+                    i--;
+                }
+                else
+                {
+                    drives_paths[i] = split[0] + " " + split[1].Substring(0, 1);
+                }
+            }
+
+            for (int i = 0; i < drives.Count; ++i)
+            {
+                for (int j = 0; j < drives_paths.Count; ++j)
+                {
+                    if (drives_paths[j].IndexOf(drives[i]) != -1)
+                    {
+                        drives[i] = drives_paths[j];
+                    }
+                }
+            }
+
             return drives;
         }
 
@@ -130,116 +157,111 @@ namespace RaspberryFlasher
             process.Start();
             process.StandardInput.WriteLine("select disk " + id.ToString());
             process.StandardInput.WriteLine("clean");
-            //process.StandardInput.WriteLine("create partition primary");
-            //process.StandardInput.WriteLine("active");
-            //process.StandardInput.WriteLine("select partition 1");
-            //process.StandardInput.WriteLine("format fs=fat32 quick");
-            //process.StandardInput.WriteLine("assign");
             process.StandardInput.WriteLine("exit");
             string output = process.StandardOutput.ReadToEnd();
             process.WaitForExit();
             log.Debug("Cleaned partitions on disk " + id);
         }
 
-        void SetUniqueID(int id, string new_unique)
-        {
-            Process process = new Process();
-            process.StartInfo.FileName = "diskpart.exe";
-            process.StartInfo.UseShellExecute = false;
-            process.StartInfo.CreateNoWindow = true;
-            process.StartInfo.RedirectStandardInput = true;
-            process.StartInfo.RedirectStandardOutput = true;
-            process.Start();
-            process.StandardInput.WriteLine("select disk " + id.ToString());
-            process.StandardInput.WriteLine("uniqueid disk id=" + new_unique);
-            process.StandardInput.WriteLine("exit");
-            string output = process.StandardOutput.ReadToEnd();
-            process.WaitForExit();
-            log.Debug("Changed UID on disk " + id + " to " + new_unique + ".");
-        }
+        //void SetUniqueID(int id, string new_unique)
+        //{
+        //    Process process = new Process();
+        //    process.StartInfo.FileName = "diskpart.exe";
+        //    process.StartInfo.UseShellExecute = false;
+        //    process.StartInfo.CreateNoWindow = true;
+        //    process.StartInfo.RedirectStandardInput = true;
+        //    process.StartInfo.RedirectStandardOutput = true;
+        //    process.Start();
+        //    process.StandardInput.WriteLine("select disk " + id.ToString());
+        //    process.StandardInput.WriteLine("uniqueid disk id=" + new_unique);
+        //    process.StandardInput.WriteLine("exit");
+        //    string output = process.StandardOutput.ReadToEnd();
+        //    process.WaitForExit();
+        //    log.Debug("Changed UID on disk " + id + " to " + new_unique + ".");
+        //}
 
-        bool DistributeUniqueIDs(List<DriveStats> stats)
-        {
-            bool changed = false;
-            List<string> all_ids = new List<string>();
-            List<string> multiple_ids = new List<string>();
+        //bool DistributeUniqueIDs(List<DriveStats> stats)
+        //{
+        //    bool changed = false;
+        //    List<string> all_ids = new List<string>();
+        //    List<string> multiple_ids = new List<string>();
 
-            foreach (var drive in stats)
+        //    foreach (var drive in stats)
 
-            {
-                if (all_ids.Contains(drive.unique_id))
-                {
-                    multiple_ids.Add(drive.unique_id);
-                }
+        //    {
+        //        if (all_ids.Contains(drive.unique_id))
+        //        {
+        //            multiple_ids.Add(drive.unique_id);
+        //        }
 
-                all_ids.Add(drive.unique_id);
-                all_ids = all_ids.Distinct().ToList();
-                multiple_ids = multiple_ids.Distinct().ToList();
-            }
+        //        all_ids.Add(drive.unique_id);
+        //        all_ids = all_ids.Distinct().ToList();
+        //        multiple_ids = multiple_ids.Distinct().ToList();
+        //    }
 
-            foreach (var id in multiple_ids)
-                log.Debug("Multiple ID found: " + id);
+        //    foreach (var id in multiple_ids)
+        //        log.Debug("Multiple ID found: " + id);
 
-            List<Thread> allThreads = new List<Thread>();
+        //    List<Thread> allThreads = new List<Thread>();
 
-            log.Debug("Spawning threads to distribute unique IDs.");
+        //    log.Debug("Spawning threads to distribute unique IDs.");
 
-            foreach (var drive in stats)
-            {
-                if (!drive.online)
-                {
-                    if (multiple_ids.Contains(drive.unique_id))
-                    {
-                        int intValue = int.Parse(drive.unique_id, System.Globalization.NumberStyles.HexNumber);
-                        int startValue = intValue - 1;
-                        while (intValue != startValue)
-                        {
-                            string hexValue = (++intValue).ToString("X8");
-                            if (!all_ids.Contains(hexValue))
-                            {
-                                Thread local = new Thread(() => SetUniqueID(drive.id, hexValue));
-                                local.Start();
-                                allThreads.Add(local);
+        //    foreach (var drive in stats)
+        //    {
+        //        if (!drive.online)
+        //        {
+        //            if (multiple_ids.Contains(drive.unique_id))
+        //            {
+        //                int intValue = int.Parse(drive.unique_id, System.Globalization.NumberStyles.HexNumber);
+        //                int startValue = intValue - 1;
+        //                while (intValue != startValue)
+        //                {
+        //                    string hexValue = (++intValue).ToString("X8");
+        //                    if (!all_ids.Contains(hexValue))
+        //                    {
+        //                        Thread local = new Thread(() => SetUniqueID(drive.id, hexValue));
+        //                        local.Start();
+        //                        allThreads.Add(local);
 
-                                all_ids.Add(hexValue);
-                                changed = true;
-                                break;
-                            }
-                        }
-                    }
-                    else
-                    {
-                        MessageBox.Show("Fehler! Gerät ist offline, hat aber eine einzigartige ID. Unbekannter Fehler, bitte dem Entwickler melden.");
-                        log.Fatal("Error occured. Drive is offline, but also has a unique id. Unknown error. Please contact developer. ID: " + drive.unique_id);
-                    }
-                }
-            }
+        //                        all_ids.Add(hexValue);
+        //                        changed = true;
+        //                        break;
+        //                    }
+        //                }
+        //            }
+        //            else
+        //            {
+        //                MessageBox.Show("Fehler! Gerät ist offline, hat aber eine einzigartige ID. Unbekannter Fehler, bitte dem Entwickler melden.");
+        //                log.Fatal("Error occured. Drive is offline, but also has a unique id. Unknown error. Please contact developer. ID: " + drive.unique_id);
+        //            }
+        //        }
+        //    }
 
-            foreach (Thread t in allThreads)
-                t.Join();
+        //    foreach (Thread t in allThreads)
+        //        t.Join();
 
-            return changed;
-        }
+        //    return changed;
+        //}
 
-        void RestartUSBReader()
-        {
-            Process process = new Process();
-            process.StartInfo.FileName = ConfigurationManager.AppSettings["CLI.Tool"] + "devcon.exe";
-            process.StartInfo.UseShellExecute = false;
-            process.StartInfo.CreateNoWindow = true;
-            process.StartInfo.RedirectStandardInput = true;
-            process.StartInfo.RedirectStandardOutput = true;
+        //void RestartUSBReader()
+        //{
+        //    Process process = new Process();
+        //    process.StartInfo.FileName = ConfigurationManager.AppSettings["CLI.Tool"] + "devcon.exe";
+        //    process.StartInfo.UseShellExecute = false;
+        //    process.StartInfo.CreateNoWindow = true;
+        //    process.StartInfo.RedirectStandardInput = true;
+        //    process.StartInfo.RedirectStandardOutput = true;
 
-            log.Info("Shutting down USB reader hardware device.");
-            process.StartInfo.Arguments = "disable \"@" + ConfigurationManager.AppSettings["Hardware_ID"] + "\"\\*\"";
-            process.Start();
-            process.WaitForExit();
+        //    log.Info("Shutting down USB reader hardware device.");
+        //    process.StartInfo.Arguments = "disable \"@" + ConfigurationManager.AppSettings["Hardware_ID"] + "\"\\*\"";
+        //    process.Start();
+        //    process.WaitForExit();
 
-            log.Info("Starting USB reader hardware device.");
-            process.StartInfo.Arguments = "enable \"@" + ConfigurationManager.AppSettings["Hardware_ID"] + "\"\\*\"";
-            process.Start();
-            process.WaitForExit();
-        }
+        //    log.Info("Starting USB reader hardware device.");
+        //    process.StartInfo.Arguments = "enable \"@" + ConfigurationManager.AppSettings["Hardware_ID"] + "\"\\*\"";
+        //    process.Start();
+        //    process.WaitForExit();
+        //}
 
         bool BringAllOnline()
         {
@@ -248,25 +270,16 @@ namespace RaspberryFlasher
             mainForm.SetLabelText("Checke aktuellen Stand der USB Laufwerke", 1);
             var stats = ReadDriveStats();
 
-            int waitTime = Convert.ToInt32(ConfigurationManager.AppSettings["WaitTime"]);
-
-            mainForm.SetLabelText("Überprüfe auf einzigartige IDs", 1);
-            if (DistributeUniqueIDs(stats))
-            {
-                log.Info("IDs were changed. Restarting USB device");
-                mainForm.SetLabelText("IDs geändert. USB Treiber wird neu gestartet. Dies dauert etwa " + (waitTime / 1000).ToString() + " Sekunden.", 1);
-                RestartUSBReader();
-                Thread.Sleep(waitTime);
-                mainForm.SetLabelText("Treiber neu gestartet. Lösche alle Partitionen", 1);
-            }
-
-            stats = ReadDriveStats();
-
+            mainForm.SetLabelText("Lösche alle Partitionen aller als online markierter Datenträger", 1);
+            
             int count = 1;
             List<Thread> threads = new List<Thread>();
 
             foreach (var drive in stats)
             {
+                if (!drive.online)
+                    continue;
+
                 mainForm.SetLabelVisibility(true, count++);
                 Thread local = new Thread(() => ClearPartitions(drive.id, count));
                 local.Start();
@@ -276,10 +289,7 @@ namespace RaspberryFlasher
             foreach (Thread t in threads)
                 t.Join();
 
-            mainForm.SetLabelText("Alle Partitionen unifiziert. Starte USB Treiber neu. Dies dauert etwa " + (waitTime / 1000).ToString() + " Sekunden.", 1);
-            RestartUSBReader();
-            Thread.Sleep(waitTime);
-            mainForm.SetLabelText("Treiber neu gestartet. System sollte nun einsatzbereit sein.", 1);
+            Thread.Sleep(10000);
 
             return true;
         }
@@ -294,10 +304,21 @@ namespace RaspberryFlasher
         {
             string sdName = ConfigurationManager.AppSettings["Configured_Capture_Name"];
 
-            IEnumerable<string> physicalDrives   = from drive in new ManagementObjectSearcher("select * from Win32_DiskDrive WHERE InterfaceType='USB' AND Caption='" + sdName + "' AND MediaType='Removable Media'").Get().Cast<ManagementObject>()
+            IEnumerable<string> physicalDrives   = from drive in new ManagementObjectSearcher("select * from Win32_DiskDrive WHERE Caption='" + sdName + "' AND MediaType='Removable Media'").Get().Cast<ManagementObject>()
                                                    select string.Format("{0}", drive["Name"]);
-            
+
             return physicalDrives;
+        }
+
+        List<string> GetUsbDevices_Letters()
+        {
+            string sdName = ConfigurationManager.AppSettings["Configured_Capture_Name"];
+            IEnumerable<string> usbDrivesLetters = from drive in new ManagementObjectSearcher("select * from Win32_DiskDrive WHERE Caption='" + sdName + "' AND MediaType='Removable Media'").Get().Cast<ManagementObject>()
+                                                   from o in drive.GetRelated("Win32_DiskPartition").Cast<ManagementObject>()
+                                                   from i in o.GetRelated("Win32_LogicalDisk").Cast<ManagementObject>()
+                                                   select string.Format("{0} {1} {2}", drive["Name"], i["Name"], o["Index"]);
+
+            return usbDrivesLetters.ToList();
         }
     }
 }
